@@ -13,11 +13,7 @@ from minio import Minio
 from minio.error import ResponseError
 
 app = Flask(__name__)
-app.config['CELERY_BROKER_URL'] = 'amqp://localhost'
-app.config['CELERY_RESULT_BACKEND'] = 'rpc://'
-
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
-celery.conf.update(app.config)
+celery = Celery(app.name, backend='rpc://', broker='amqp://')
 
 
 class AuditEvents():
@@ -30,7 +26,9 @@ class AuditEvents():
 
 JSON_CONTENT_TYPE = 'application/json'
 
-optimize_cmd = ["python", "/opt/intel/openvino/deployment_tools/model_optimizer/mo.py"]
+optimize_cmd = [
+    "python", "/opt/intel/openvino/deployment_tools/model_optimizer/mo.py"
+]
 
 minio_client = Minio('127.0.0.1:9000',
                      access_key='minioadmin',
@@ -73,6 +71,7 @@ def optimize():
         AuditEvents.OPTIMIZE_SERVICE_REQUEST_STARTED))
     # #### Get the request
     req_json = get_request_data_as_json()
+    print(req_json)
     res = process.delay(req_json)
 
     print("\nThe task id is {}".format(res.id))
@@ -95,10 +94,10 @@ def get_status(task_id):
 
 @celery.task
 def process(req_json):
-    print(req_json)
     cmd = optimize_cmd
     try:
-        tmp_path = os.path.join(tempfile.tempdir, req_json['object_name'])
+        print(tempfile.tempdir, req_json['object_name'])
+        tmp_path = os.path.join(tempfile.gettempdir(), req_json['object_name'])
         print("writing to {}".format(tmp_path))
         data = minio_client.get_object(bucket_name=req_json['bucket'],
                                        object_name=req_json['object_name'])
@@ -118,28 +117,27 @@ def process(req_json):
         cmd.append(req_json[request_key])
 
     cmd.append('--output_dir')
-    cmd.append(tempfile.tempdir)
+    cmd.append(tempfile.gettempdir())
 
     print("Using command: ", cmd)
-    ret = subprocess.run(cmd, shell=True)
+    # ret = subprocess.run(cmd, shell=True)
 
-    try:
-        op_file_pattern = os.path.splitext(tmp_path)[0] + "*"
-        for op_file in glob.glob(op_file_pattern):
-            with open(op_file, 'rb') as file_data:
-                file_stat = os.stat(op_file)
-                print(
-                    minio_client.put_object(
-                        bucket_name=req_json['bucket'],
-                        object_name=os.path.basename(op_file),
-                        data=file_data,
-                        length=file_stat.st_size))
-    except ResponseError as err:
-        print(err)
+    # try:
+    #     op_file_pattern = os.path.splitext(tmp_path)[0] + "*"
+    #     for op_file in glob.glob(op_file_pattern):
+    #         with open(op_file, 'rb') as file_data:
+    #             file_stat = os.stat(op_file)
+    #             print(
+    #                 minio_client.put_object(
+    #                     bucket_name=req_json['bucket'],
+    #                     object_name=os.path.basename(op_file),
+    #                     data=file_data,
+    #                     length=file_stat.st_size))
+    # except ResponseError as err:
+    #     print(err)
 
-    return ret
+    # return ret
 
 
 if __name__ == '__main__':
-    print(app.name)
     app.run(debug=True)
