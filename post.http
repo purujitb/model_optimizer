@@ -1,0 +1,10 @@
+POST http://127.0.0.1:5000/optimize-model
+content-type: application/json
+
+{
+    "bucket": "model-optimizer",
+    "object_name": "frozen.pb",
+    "input_shape": "[1,224,224,3]"
+}
+
+python3 /opt/intel/openvino/deployment_tools/model_optimizer/mo.py --input_model /tmp/frozen.pb --input_shape [1,224,224,3] --output_dir /tmp
